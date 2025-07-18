@@ -1,0 +1,15 @@
+gnore all .env files anywhere
+**/.env
+
+# Caddy (ignore only inside caddy-reverse-proxy)
+caddy-reverse-proxy/caddy_data/
+caddy-reverse-proxy/caddy_config/
+caddy-reverse-proxy/site/
+
+# Immich
+immich/library/
+immich/postgres/
+
+# Jellifyn
+jellifyn/cache/
+jellifyn/config/

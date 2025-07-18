@@ -1,0 +1,19 @@
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    ports:
+      - '8096:8096'
+    devices:
+      - /dev/dri:/dev/dri
+    environment:
+      - LIBVA_DRIVER_NAME=radeonsi
+    group_add:
+      - "44"
+    volumes:
+      - ./config:/config
+      - ./cache:/cache
+      - type: bind
+        source: /mnt/disk1/r-gmk/jellyfinmedia
+        target: /media
+    restart: 'unless-stopped'
