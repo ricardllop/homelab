@@ -13,3 +13,10 @@ immich/postgres/
 # Jellifyn
 jellifyn/cache/
 jellifyn/config/
+
+#Adguard
+adguardhome/config/*
+adguardhome/work/*
+
+# Project-x
+project-x/*

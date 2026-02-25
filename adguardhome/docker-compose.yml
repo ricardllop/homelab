@@ -1,0 +1,12 @@
+name: adguardhome
+
+services:
+  adguardhome:
+    image: adguard/adguardhome
+    volumes:
+      - ./config:/opt/adguardhome/conf # app configuration
+      - ./work:/opt/adguardhome/work # app working directory
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      - ADGUARD_HOME_DEFAULT_WEB_PORT=81

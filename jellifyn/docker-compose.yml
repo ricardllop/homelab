@@ -16,4 +16,10 @@ services:
       - type: bind
         source: /mnt/disk1/r-gmk/jellyfinmedia
         target: /media
+    networks:
+      - homelab
     restart: 'unless-stopped'
+
+networks:
+  homelab:
+    external: true
