@@ -10,6 +10,7 @@ services:
       - LIBVA_DRIVER_NAME=radeonsi
     group_add:
       - "44"
+      - "993"
     volumes:
       - ./config:/config
       - ./cache:/cache
