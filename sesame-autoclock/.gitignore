@@ -1,0 +1,6 @@
+# Runtime data: persistent browser profile (contains session tokens!) and screenshots
+data/
+.env
+
+__pycache__/
+*.pyc
