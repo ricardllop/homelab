@@ -30,9 +30,14 @@ Bloqueadas — Su IP no es válida"). Instead, `PLAN_TIME` plans a reminder-only
 
 1. `OFFICE_REMIND_CLOCK_IN` (07:30) — "clock in" reminder, repeated twice every
    `OFFICE_REMIND_REPEAT_MINUTES` (07:45, 08:00) while the signings API shows you
-   haven't clocked in yet
-2. `OFFICE_REMIND_BREAK_START` (12:50) — single "start the lunch pause" reminder
-   (skipped if you already paused or clocked out)
+   haven't clocked in yet. Still not clocked in after that? It keeps nagging every
+   `OFFICE_REMIND_NAG_MINUTES` (08:10, 08:20, …) until you do, up to the lunch
+   reminder. Nagging needs the API to confirm you're not clocked in (it stops if it
+   can't check), and is off on days with a partial absence, where clocking in late
+   is expected.
+2. `OFFICE_REMIND_BREAK_START` (12:50) — "start the lunch pause" reminder, repeated
+   once after `OFFICE_REMIND_BREAK_START_REPEAT_MINUTES` (12:55) while you're still
+   clocked in (skipped if you already paused or clocked out)
 3. `OFFICE_REMIND_BREAK_END` (14:00) — "clock back in" reminder, repeated twice
    (14:15, 14:30) while you're still on the pause
 4. A clock-out watcher polls the signings API from just after the back-from-lunch

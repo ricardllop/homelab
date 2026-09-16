@@ -79,3 +79,11 @@ class State:
         if plan and event in plan:
             plan[event]["time"] = iso
             self._save()
+
+    def set_nag_until(self, day: date, event: str, iso: str) -> None:
+        """Let a reminder keep nagging past its repeats, up to this time,
+        while the user still has not clocked (see ClockScheduler)."""
+        plan = self.get_plan(day)
+        if plan and event in plan:
+            plan[event]["nag_until"] = iso
+            self._save()

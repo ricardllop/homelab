@@ -121,6 +121,16 @@ class ClockScheduler:
                 events[name] = when = now + timedelta(seconds=30 * late)
             self._schedule_event(name, when)
         self.state.save_plan(today, {k: v.isoformat() for k, v in events.items()})
+        # still not clocked in once its repeats run out? The clock-in reminder
+        # keeps nagging until the lunch reminder is due. Not on half days: a
+        # morning absence means clocking in late on purpose.
+        nag_until = datetime.combine(
+            today, self.cfg.office_remind_break_start, tzinfo=self.cfg.tz)
+        if half_day or nag_until <= now:
+            nag_until = None
+        else:
+            self.state.set_nag_until(
+                today, "remind_clock_in", nag_until.isoformat())
 
         r = self.cfg.office_remind_repeat_minutes
         lines = [f"📋 Plan for {today} (reply /skip to cancel):",
@@ -133,8 +143,15 @@ class ClockScheduler:
                          f"usual office ones, adjust on your own.\n{evidence[:300]}")
         lines += [f"  {when:%H:%M}  {EVENT_LABELS[name]}" for name, when in events.items()]
         lines.append(f"↻ The clock in/back reminders repeat twice every {r} min "
+                     "and the lunch one once after "
+                     f"{self.cfg.office_remind_break_start_repeat_minutes} min, "
                      "until you have clocked; the clock-out one fires once "
                      f"{format_hm(work_minutes * 60)} of work are complete.")
+        if nag_until:
+            lines.append("🔔 Still not clocked in after those? Then the "
+                         "clock-in reminder keeps going every "
+                         f"{self.cfg.office_remind_nag_minutes} min until you "
+                         f"are, up to {nag_until:%H:%M}.")
         await self.bot.send("\n".join(lines))
 
     def _make_office_times(self, day: date) -> dict[str, datetime]:
@@ -278,8 +295,9 @@ class ClockScheduler:
 
     # --- office-day reminders -------------------------------------------------
     # first message + this many repeats (spaced office_remind_repeat_minutes
-    # apart) while the user still has not clocked
-    REMINDER_REPEATS = {"remind_clock_in": 2, "remind_break_start": 0,
+    # apart; office_remind_break_start_repeat_minutes for the lunch one) while
+    # the user still has not clocked
+    REMINDER_REPEATS = {"remind_clock_in": 2, "remind_break_start": 1,
                         "remind_break_end": 2}
     WATCH_GIVE_UP_HOUR = 22  # stop chasing the clock-out reminder after this
 
@@ -296,7 +314,9 @@ class ClockScheduler:
             log.exception("%s: day stats fetch failed", name)
             stats = None
         if stats is None:
-            needed = True  # cannot verify — remind anyway
+            # cannot verify — remind anyway, but never nag blindly (past the
+            # repeats, see below): a broken session/API must not spam
+            needed = attempt <= self.REMINDER_REPEATS[name]
         elif name == "remind_clock_in":
             needed = stats["state"] == "out" and not stats["checks"]
         elif name == "remind_break_start":
@@ -317,13 +337,27 @@ class ClockScheduler:
         if stats is None:
             msg += " (could not verify the current clock state)"
         repeats = self.REMINDER_REPEATS[name]
+        # set by _plan_office_day (clock-in reminder, full office days): once
+        # the repeats run out, keep nagging until you clock, up to this time
+        plan = self.state.get_plan(today) or {}
+        nag_until = plan.get(name, {}).get("nag_until")
+        now, nxt = self._now(), None
         if attempt < repeats:
-            nxt = self._now() + timedelta(
-                minutes=self.cfg.office_remind_repeat_minutes)
+            nxt = now + timedelta(minutes=(
+                self.cfg.office_remind_break_start_repeat_minutes
+                if name == "remind_break_start"
+                else self.cfg.office_remind_repeat_minutes))
+        elif nag_until:
+            nxt = now + timedelta(minutes=self.cfg.office_remind_nag_minutes)
+            if nxt >= datetime.fromisoformat(nag_until):
+                nxt = None
+        if nxt:
             self._reschedule_reminder(name, nxt, attempt + 1)
         else:
             self.state.mark_done(today, name)
-        if repeats:
+        if nag_until:  # open-ended, so no "n/total"
+            msg += f" (#{attempt + 1})"
+        elif repeats:
             msg += f" ({attempt + 1}/{repeats + 1})"
         await self.bot.send(msg)
 

@@ -27,9 +27,11 @@ class Config:
     # office days ("Normal" clock-ins are IP-blocked outside the office
     # network, so the bot only reminds — see ClockScheduler._plan_office_day)
     office_remind_clock_in: time     # first "clock in manually" reminder
-    office_remind_break_start: time  # single "start the lunch pause" reminder
+    office_remind_break_start: time  # first "start the lunch pause" reminder
     office_remind_break_end: time    # first "clock back in" reminder
     office_remind_repeat_minutes: int  # spacing of the two repeat reminders
+    office_remind_nag_minutes: int  # clock-in reminder spacing after those
+    office_remind_break_start_repeat_minutes: int  # lunch reminder's repeat
 
     tz: ZoneInfo
     headless: bool
@@ -67,6 +69,10 @@ class Config:
                 os.environ.get("OFFICE_REMIND_BREAK_END", "14:00")),
             office_remind_repeat_minutes=int(
                 os.environ.get("OFFICE_REMIND_REPEAT_MINUTES", "15")),
+            office_remind_nag_minutes=int(
+                os.environ.get("OFFICE_REMIND_NAG_MINUTES", "10")),
+            office_remind_break_start_repeat_minutes=int(
+                os.environ.get("OFFICE_REMIND_BREAK_START_REPEAT_MINUTES", "5")),
             tz=ZoneInfo(os.environ.get("TZ", "Europe/Madrid")),
             headless=os.environ.get("HEADLESS", "true").lower() != "false",
             data_dir=data_dir,
