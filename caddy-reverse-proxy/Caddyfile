@@ -3,7 +3,7 @@ immich.homelab.ricardllop.com {
 }
 
 (local_only) {
-    @blocked not remote_ip 192.168.0.0/24
+    @blocked not remote_ip 192.168.1.0/24
     abort @blocked
 }
 
@@ -20,5 +20,5 @@ jellyfin.local {
 adguard.local {
     import local_only
     tls internal
-    reverse_proxy 192.168.0.2:81
+    reverse_proxy 192.168.1.2:81
 }
