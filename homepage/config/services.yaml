@@ -72,3 +72,12 @@
         description: Logs y alertas
         container: grafana
         server: my-docker
+
+- Asistente:
+    - Hermes:
+        href: https://hermes.local/
+        siteMonitor: http://hermes:9119
+        icon: mdi-robot-outline
+        description: Agente IA (Claude)
+        container: hermes
+        server: my-docker

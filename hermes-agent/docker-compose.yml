@@ -1,0 +1,26 @@
+name: hermes-agent
+
+networks:
+  homelab:
+    external: true
+
+services:
+  hermes:
+    image: nousresearch/hermes-agent:latest
+    container_name: hermes
+    networks: [homelab]
+    command: gateway run
+    env_file: .env  # dashboard login
+    environment:
+      - TZ=Europe/Madrid
+      - HERMES_DASHBOARD=1  # web UI on :9119, served as hermes.local by Caddy
+      # Remap container user to host user so ./data stays owned by us.
+      - HERMES_UID=1000
+      - HERMES_GID=1000
+      # Dashboard chat runs with HOME=/opt/data/home, so pin claude's login dir for every process.
+      - CLAUDE_CONFIG_DIR=/opt/data/.claude
+    # Holds config.yaml, .env, sessions, memories, plus the claude CLI (.local/bin) and its login (.claude).
+    volumes:
+      - ./data:/opt/data
+    shm_size: 1gb  # browser tools
+    restart: unless-stopped

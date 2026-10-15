@@ -34,3 +34,9 @@ grafana.local {
     tls internal
     reverse_proxy grafana:3000
 }
+
+hermes.local {
+    import local_only
+    tls internal
+    reverse_proxy hermes:9119
+}

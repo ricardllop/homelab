@@ -81,21 +81,32 @@
         {
           "refId": "A",
           "queryType": "instant",
-          "expr": "sum(count_over_time({job=\"immich-backup\"} |~ \"FAILED|not mounted\" [7d]))"
+          "expr": "sum(count_over_time({job=\"immich-backup\"} |~ \"FAILED|not mounted\" [7d]))",
+          "legendFormat": "Immich"
+        },
+        {
+          "refId": "B",
+          "queryType": "instant",
+          "expr": "sum(count_over_time({job=\"journal\", syslog_identifier=\"hermes-backup\"} |~ \"FAILED|not mounted\" [7d]))",
+          "legendFormat": "Hermes"
         }
       ]
     },
     {
       "id": 4,
       "type": "logs",
-      "title": "Immich backup runs",
+      "title": "Backup runs",
       "gridPos": { "x": 6, "y": 8, "w": 18, "h": 8 },
       "datasource": { "type": "loki", "uid": "loki" },
-      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "options": { "showTime": true, "showLabels": true, "sortOrder": "Descending", "wrapLogMessage": true },
       "targets": [
         {
           "refId": "A",
           "expr": "{job=\"immich-backup\"} |~ \"===|FAILED|not mounted\""
+        },
+        {
+          "refId": "B",
+          "expr": "{job=\"journal\", syslog_identifier=\"hermes-backup\"} |~ \"Done|FAILED|not mounted\""
         }
       ]
     },

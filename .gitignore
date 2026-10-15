@@ -35,3 +35,6 @@ homepage/config/logs/
 *.pid
 *.db-shm
 *.db-wal
+
+# Hermes agent: data dir holds API keys, Claude login and session history
+hermes-agent/data/

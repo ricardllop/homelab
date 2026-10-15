@@ -27,7 +27,7 @@ Internet
     └── DDNS Updater  (keeps DNS record pointing to home IP)
 ```
 
-Local-only services (anything under a `.local` hostname) reject connections from outside `192.168.0.0/24` at the Caddy level.
+Local-only services (anything under a `.local` hostname) reject connections from outside `192.168.1.0/24` at the Caddy level.
 
 ## Project structure
 
