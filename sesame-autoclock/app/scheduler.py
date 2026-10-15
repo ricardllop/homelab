@@ -21,7 +21,10 @@ class ClockScheduler:
         self.state = state
         self.sesame = sesame
         self.bot = bot
-        self.sched = AsyncIOScheduler(timezone=cfg.tz)
+        # default grace is 1s: a job woken a bit late (host sleep, busy loop)
+        # would be dropped silently instead of run
+        self.sched = AsyncIOScheduler(
+            timezone=cfg.tz, job_defaults={"misfire_grace_time": 600})
 
     def start(self) -> None:
         self.sched.add_job(
@@ -41,7 +44,10 @@ class ClockScheduler:
         return datetime.now(self.cfg.tz)
 
     # --- daily planning ---------------------------------------------------
-    async def plan_day(self) -> None:
+    async def plan_day(self, replan: bool = False) -> None:
+        """replan: today's plan is being redone mid-day (/doremote,
+        /undoremote), so a clock-in time that already passed runs right away
+        instead of being dropped."""
         today = date.today()
         if today.weekday() >= 5:
             return
@@ -55,16 +61,6 @@ class ClockScheduler:
             log.exception("absence check failed")
             hits, evidence = None, "absence check raised an error (see logs)"
 
-        half_day = None
-        if hits:
-            half_day = self._half_day_window(hits)
-            if half_day is None:
-                self.state.add_skip(today)
-                await self.bot.send(
-                    f"🏖 Absence/holiday detected for today — not clocking.\n{evidence[:500]}"
-                )
-                return
-
         # Sesame's own schedule knows the real target for the day (e.g. summer
         # hours); prefer it over the static WORK_MINUTES when available.
         target = None
@@ -73,27 +69,50 @@ class ClockScheduler:
             target = (stats or {}).get("to_work_seconds")
         except Exception:
             log.exception("day stats fetch failed")
+        work_minutes = target // 60 if target else self.cfg.work_minutes
+
+        half_day = None
+        if hits:
+            half_day = self._half_day_window(hits, work_minutes)
+            if half_day is None:
+                self.state.add_skip(today)
+                await self.bot.send(
+                    f"🏖 Absence/holiday detected for today — not clocking.\n{evidence[:500]}"
+                )
+                return
+
         if target == 0:
             await self.bot.send(
                 f"🏖 Sesame plans 0h of work for {today} — not clocking today."
             )
             return
-        work_minutes = target // 60 if target else self.cfg.work_minutes
 
-        if work_type_for_day(today) == "Normal":
+        if work_type_for_day(today, self.state.remote_days()) == "Normal":
             # office day: "Normal" clock-ins are IP-blocked from outside the
             # office network, so the bot must not click anything — remind only
             await self._plan_office_day(today, work_minutes, hits, half_day, evidence)
             return
 
-        events = (self._make_half_day_times(today, *half_day) if half_day
+        events = (self._make_half_day_times(today, work_minutes, *half_day) if half_day
                   else self._make_times(today, work_minutes))
+        now = self._now()
+        late_start = replan and events["clock_in"] <= now < events["clock_out"]
+        if late_start:
+            # e.g. /doremote at 10:00 on an office day: clock in now and keep
+            # the day's length by pushing clock-out back by the same amount
+            shift = now + timedelta(minutes=1) - events["clock_in"]
+            events["clock_in"] += shift
+            events["clock_out"] += shift
         self.state.save_plan(today, {k: v.isoformat() for k, v in events.items()})
         for name, when in events.items():
             self._schedule_event(name, when)
 
         lines = [f"📋 Plan for {today} (reply /skip to cancel):",
-                 "🏠 Work type: Remote"]
+                 "🏠 Work type: Remote"
+                 + (" (office day switched with /doremote)"
+                    if self.state.is_remote_day(today) else "")]
+        if late_start:
+            lines.append("⏩ Planned late — clocking in right away.")
         if hits is None:
             lines.append("⚠️ Could not verify absences — assuming a workday.")
         if half_day:
@@ -101,8 +120,16 @@ class ClockScheduler:
         elif work_minutes != self.cfg.work_minutes:
             lines.append(f"🕒 Sesame plans {format_hm(work_minutes * 60)} today "
                          f"— using that instead of WORK_MINUTES.")
-        lines += [f"  {when:%H:%M}  {EVENT_LABELS[name]}" for name, when in events.items()]
+        lines += [f"  {when:%H:%M}  {EVENT_LABELS[name]}"
+                  + (" (already passed, skipped)" if when <= now else "")
+                  for name, when in events.items()]
         await self.bot.send("\n".join(lines))
+
+    async def replan_today(self) -> None:
+        """Throw away today's plan and plan again, e.g. after /doremote
+        turned today from an office day into a remote one."""
+        self.cancel_today()
+        await self.plan_day(replan=True)
 
     # --- office days: reminders instead of clicks -----------------------------
     async def _plan_office_day(
@@ -170,7 +197,9 @@ class ClockScheduler:
         }
 
     # --- half-day absences --------------------------------------------------
-    def _half_day_window(self, hits: list[dict]) -> tuple[time, time] | None:
+    def _half_day_window(
+        self, hits: list[dict], work_minutes: int
+    ) -> tuple[time, time] | None:
         """The combined absence window when today's absences fit a half day.
 
         None means "skip the whole day": any full-day entry (public holiday or
@@ -190,16 +219,16 @@ class ClockScheduler:
                 return None
             spans.append((s, en))
         total = sum((en.hour - s.hour) * 60 + en.minute - s.minute for s, en in spans)
-        if total > self.cfg.work_minutes // 2:
+        if total > work_minutes // 2:
             return None
         return min(s for s, _ in spans), max(en for _, en in spans)
 
     def _make_half_day_times(
-        self, day: date, absence_start: time, absence_end: time
+        self, day: date, work_minutes: int, absence_start: time, absence_end: time
     ) -> dict[str, datetime]:
         """One block of half the workday, before the absence if it fits."""
         j = self.cfg.jitter_minutes
-        block = timedelta(minutes=self.cfg.work_minutes // 2)
+        block = timedelta(minutes=work_minutes // 2)
         tz = self.cfg.tz
         start = datetime.combine(day, self.cfg.clock_in, tzinfo=tz) + timedelta(
             minutes=random.randint(-j, j)
@@ -269,10 +298,14 @@ class ClockScheduler:
         if self.state.is_skipped(today):
             log.info("skipping %s: day is on the skip list", name)
             return
+        if name not in (self.state.get_plan(today) or {}):
+            log.info("skipping %s: no longer in today's plan", name)
+            return  # replanned (/undoremote) while this job was pending
+        work_type = work_type_for_day(today, self.state.remote_days())
         action = {
-            "clock_in": self.sesame.clock_in,
+            "clock_in": lambda: self.sesame.clock_in(work_type),
             "break_start": self.sesame.start_break,
-            "break_end": self.sesame.clock_in,
+            "break_end": lambda: self.sesame.clock_in(work_type),
             "clock_out": self.sesame.clock_out,
         }[name]
         last_error: Exception | None = None
@@ -305,6 +338,8 @@ class ClockScheduler:
         today = date.today()
         if self.state.is_skipped(today):
             return
+        if name not in (self.state.get_plan(today) or {}):
+            return  # replanned (/doremote) while this reminder was pending
         if name == "remind_clock_out":
             await self._watch_clock_out()
             return

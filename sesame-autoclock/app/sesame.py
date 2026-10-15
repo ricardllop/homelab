@@ -60,15 +60,20 @@ ANY_CLOCK_BTN = (
 # Sesame rejects it with "IPs Bloqueadas — Su IP no es válida", so on office
 # days the scheduler never auto-clocks (it sends Telegram reminders instead,
 # see ClockScheduler._plan_office_day); a manual /in on such a day will fail
-# the same way unless the bot happens to run on the office network.
+# the same way unless the bot happens to run on the office network. A single
+# office day can be switched to Remote with /doremote (State.remote_days).
 REMOTE_WORK_WEEKDAYS = {0, 1, 2, 4}  # date.weekday(): Mon=0 ... Sun=6
 # dropdown after Pausa offers "Descanso" (short rest) and "Lunch" — always
 # take the lunch break here.
 PAUSE_OPTION = "Lunch"
 
 
-def work_type_for_day(day: date) -> str:
-    return "Remote" if day.weekday() in REMOTE_WORK_WEEKDAYS else "Normal"
+def work_type_for_day(day: date, remote_days=()) -> str:
+    """remote_days: ISO dates forced to Remote on top of the weekly pattern
+    (office days switched with /doremote, see State.remote_days)."""
+    if day.weekday() in REMOTE_WORK_WEEKDAYS or day.isoformat() in remote_days:
+        return "Remote"
+    return "Normal"
 
 
 def _dropdown_option(label: str) -> str:
@@ -171,6 +176,7 @@ class Sesame:
             path.with_suffix(".html").write_text(await page.content())
         except Exception:
             log.exception("could not dump page html")
+        _prune(path.parent)
         return path
 
     async def _fail(self, msg: str) -> SesameError:
@@ -205,6 +211,9 @@ class Sesame:
                 if "sesametime.com" in page.url and "login" in page.url:
                     await self._sesame_login_step(page)
                 # otherwise: mid-redirect or the SPA is still loading — wait
+            except TimeoutError:
+                # bot.ask() got no reply: re-asking would hold the lock for hours
+                raise await self._fail("No reply in Telegram — login aborted.")
             except Exception:
                 # one flaky click must not abort the whole login attempt
                 log.exception("login step failed, retrying")
@@ -346,7 +355,8 @@ class Sesame:
                 "check/fix it manually in Sesame."
             )
 
-    async def clock_in(self) -> str:
+    async def clock_in(self, work_type: str) -> str:
+        """work_type: the Entrar dropdown option, see work_type_for_day()."""
         async with self._lock:
             page = await self._page_or_launch()
             await self._ensure_logged_in(page)
@@ -355,7 +365,6 @@ class Sesame:
             # state is "out" or "pause"; during a pause Entrar means "resume",
             # so the same click both starts the day and ends the lunch pause
             await page.locator(BTN_CLOCK_IN).first.click()
-            work_type = work_type_for_day(date.today())
             option = page.locator(_dropdown_option(work_type))
             try:
                 await option.first.wait_for(state="visible", timeout=8000)
@@ -538,15 +547,16 @@ class Sesame:
                 m = EMPLOYEE_API_BASE_RE.match(resp.url)
                 if m:
                     self._api_base = m.group(0)
-            if not self._api_auth:
-                try:
-                    headers = await resp.request.all_headers()
-                    self._api_auth = {
-                        k: v for k, v in headers.items()
-                        if k.lower() in API_AUTH_HEADERS
-                    }
-                except Exception:
-                    pass
+            # always take the latest headers: a rotated token must replace
+            # the stale one, or every direct API call keeps failing
+            try:
+                headers = await resp.request.all_headers()
+                auth = {k: v for k, v in headers.items()
+                        if k.lower() in API_AUTH_HEADERS}
+                if auth:
+                    self._api_auth = auth
+            except Exception:
+                pass
 
         page = await self._page_or_launch()
         await self._ensure_logged_in(page)
@@ -588,8 +598,15 @@ class Sesame:
                 indent=2, default=str,
             ))
             log.info("captured %d API payloads -> %s", len(payloads), path)
+            _prune(path.parent)
         except Exception:
             log.exception("could not dump API payloads")
+
+
+def _prune(folder: Path, keep: int = 50) -> None:
+    """Keep only the newest debug files (names start with a timestamp)."""
+    for old in sorted(folder.iterdir())[:-keep]:
+        old.unlink(missing_ok=True)
 
 
 # --- checks payload parsing ------------------------------------------------

@@ -26,7 +26,8 @@ in the logs/screenshot. Edit `REMOTE_WORK_WEEKDAYS` there if the policy changes.
 On office days (Thursdays) the bot never clicks anything: "Normal" clock-ins are
 IP-restricted and Sesame rejects them from outside the office network ("IPs
 Bloqueadas — Su IP no es válida"). Instead, `PLAN_TIME` plans a reminder-only day
-(no jitter — these are nudges, not clock events):
+(no jitter — these are nudges, not clock events). Working remotely on an office day?
+`/doremote [date]` turns that day into a normal auto-clocked Remote day.
 
 1. `OFFICE_REMIND_CLOCK_IN` (07:30) — "clock in" reminder, repeated twice every
    `OFFICE_REMIND_REPEAT_MINUTES` (07:45, 08:00) while the signings API shows you
@@ -75,8 +76,10 @@ ask you to reply with the code.
 | Command | Effect |
 |---|---|
 | `/status` | Clock state, today's signings (from the Sesame API), worked vs planned hours, and today's plan |
-| `/skip [YYYY-MM-DD]` | Don't clock that day (default today; cancels pending events) |
-| `/unskip [YYYY-MM-DD]` | Undo a skip |
+| `/skip [YYYY-MM-DD\|today\|tomorrow]` | Don't clock that day (default today; cancels pending events) |
+| `/unskip [YYYY-MM-DD\|today\|tomorrow]` | Undo a skip |
+| `/doremote [YYYY-MM-DD\|today\|tomorrow]` | Work an office day (Thursday) remotely: auto-clock it with Entrar → Remote instead of sending reminders (default: the next office day, today included). If today is already planned, it is replanned on the spot — and if the clock-in time has passed, the bot clocks in right away and shifts clock-out to keep the full day |
+| `/undoremote [YYYY-MM-DD\|today\|tomorrow]` | Undo a `/doremote` (default: the next switched day) |
 | `/in` / `/out` | Manual clock in / out |
 | `/absences` | Run the absence check for today and show the evidence |
 | `/screenshot` | Screenshot of the current browser page |
@@ -113,7 +116,7 @@ screenshot — adjust the selectors to what you see and rebuild.
 
 - This creates official time records. It only formalizes hours you actually work —
   `/skip` any sick day or ad-hoc absence the Sesame calendar doesn't know about.
-- State (skip list, today's plan) lives in `./data/state.json`; the browser profile in
+- State (skip list, `/doremote` days, today's plan) lives in `./data/state.json`; the browser profile in
   `./data/profile` contains live session tokens — both are gitignored, don't commit them.
 - If login gets flaky under headless Chromium, set `HEADLESS=false` and run under
   xvfb (`xvfb-run python -m app.main`) as a fallback.

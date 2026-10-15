@@ -1,4 +1,5 @@
 import json
+import os
 from datetime import date
 from pathlib import Path
 
@@ -24,17 +25,21 @@ EVENT_LABELS = {
 
 
 class State:
-    """Tiny JSON persistence: skipped dates and the current day's plan."""
+    """Tiny JSON persistence: skipped dates, office days forced to remote
+    (/doremote) and the current day's plan."""
 
     def __init__(self, path: Path):
         self.path = path
-        self._data = {"skips": [], "plans": {}}
+        self._data = {"skips": [], "remote_days": [], "plans": {}}
         if path.exists():
             self._data.update(json.loads(path.read_text()))
 
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self._data, indent=2))
+        # write + rename: a crash mid-write must not leave a corrupt file
+        tmp = self.path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(self._data, indent=2))
+        os.replace(tmp, self.path)
 
     # --- skips -------------------------------------------------------
     def is_skipped(self, day: date) -> bool:
@@ -52,6 +57,23 @@ class State:
 
     def skips(self) -> list[str]:
         return sorted(self._data["skips"])
+
+    # --- office days worked remotely (/doremote) ------------------------
+    def is_remote_day(self, day: date) -> bool:
+        return day.isoformat() in self._data["remote_days"]
+
+    def add_remote_day(self, day: date) -> None:
+        if not self.is_remote_day(day):
+            self._data["remote_days"].append(day.isoformat())
+            self._save()
+
+    def remove_remote_day(self, day: date) -> None:
+        if self.is_remote_day(day):
+            self._data["remote_days"].remove(day.isoformat())
+            self._save()
+
+    def remote_days(self) -> list[str]:
+        return sorted(self._data["remote_days"])
 
     # --- daily plan ----------------------------------------------------
     def save_plan(self, day: date, events: dict[str, str]) -> None:

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from telegram import BotCommand, Update
@@ -13,7 +13,7 @@ from telegram.ext import (
 )
 
 from .config import Config
-from .sesame import entry_emoji, format_entry, format_hm
+from .sesame import entry_emoji, format_entry, format_hm, work_type_for_day
 from .state import EVENT_LABELS, EVENT_ORDER, OFFICE_EVENT_ORDER, State
 
 log = logging.getLogger("bot")
@@ -21,9 +21,13 @@ log = logging.getLogger("bot")
 # single source for /help and Telegram's "/" autocomplete menu
 COMMANDS = [
     ("status", "clock state + today's signings + plan"),
-    ("skip", "don't clock on a day: /skip [YYYY-MM-DD] (default today)"),
-    ("unskip", "undo a skip: /unskip [YYYY-MM-DD]"),
-    ("in", "clock in now (Entrar → Remote/Normal by weekday)"),
+    ("skip", "don't clock on a day: /skip [YYYY-MM-DD|today|tomorrow] (default today)"),
+    ("unskip", "undo a skip: /unskip [YYYY-MM-DD|today|tomorrow]"),
+    ("doremote", "auto-clock an office day as Remote: /doremote [YYYY-MM-DD|today|tomorrow] "
+                 "(default next office day)"),
+    ("undoremote", "back to office reminders: /undoremote [YYYY-MM-DD|today|tomorrow] "
+                   "(default next switched day)"),
+    ("in", "clock in now (Entrar → Remote/Normal by weekday or /doremote)"),
     ("out", "clock out now (Salir)"),
     ("absences", "fetch this year's absences & holidays and check today"),
     ("screenshot", "screenshot of the current browser page"),
@@ -52,7 +56,8 @@ class TgBot:
         for cmd, fn in [
             ("start", self._cmd_help), ("help", self._cmd_help),
             ("status", self._cmd_status), ("skip", self._cmd_skip),
-            ("unskip", self._cmd_unskip), ("in", self._cmd_in),
+            ("unskip", self._cmd_unskip), ("doremote", self._cmd_doremote),
+            ("undoremote", self._cmd_undoremote), ("in", self._cmd_in),
             ("out", self._cmd_out), ("absences", self._cmd_absences),
             ("screenshot", self._cmd_screenshot),
         ]:
@@ -159,8 +164,13 @@ class TgBot:
             lines.append("No plan for today.")
         if self.state.is_skipped(today):
             lines.append("Today is SKIPPED.")
+        if self.state.is_remote_day(today):
+            lines.append("Today is an office day switched to REMOTE.")
         if self.state.skips():
             lines.append(f"Skip list: {', '.join(self.state.skips())}")
+        remote = self._upcoming_remote_days()
+        if remote:
+            lines.append(f"Office days switched to remote: {', '.join(remote)}")
         await update.message.reply_text("\n".join(lines))
 
     async def _safe_day_stats(self, day: date) -> dict | None:
@@ -198,9 +208,12 @@ class TgBot:
         return lines
 
     def _arg_date(self, context) -> date:
-        if context.args:
-            return date.fromisoformat(context.args[0])
-        return date.today()
+        if not context.args:
+            return date.today()
+        arg = context.args[0].lower()
+        if arg in ("today", "tomorrow"):
+            return date.today() + timedelta(days=arg == "tomorrow")
+        return date.fromisoformat(arg)
 
     async def _cmd_skip(self, update: Update, context):
         day = self._arg_date(context)
@@ -213,10 +226,77 @@ class TgBot:
         day = self._arg_date(context)
         self.state.remove_skip(day)
         await update.message.reply_text(f"{day.isoformat()} removed from the skip list.")
+        await self._replan_if_today(day)  # /skip today cancelled today's jobs
+
+    def _upcoming_remote_days(self) -> list[str]:
+        today = date.today().isoformat()
+        return [d for d in self.state.remote_days() if d >= today]
+
+    async def _cmd_doremote(self, update: Update, context):
+        if context.args:
+            day = self._arg_date(context)
+        else:  # next office day by the weekly pattern, today included
+            day = date.today()
+            while day.weekday() >= 5 or work_type_for_day(day) == "Remote":
+                day += timedelta(days=1)
+        if day < date.today():
+            await update.message.reply_text(f"{day.isoformat()} is in the past.")
+            return
+        if day.weekday() >= 5:
+            await update.message.reply_text(
+                f"{day.isoformat()} is a weekend — nothing to clock.")
+            return
+        if work_type_for_day(day) == "Remote":
+            await update.message.reply_text(
+                f"{day.isoformat()} is already a remote day.")
+            return
+        if self.state.is_remote_day(day):
+            await update.message.reply_text(
+                f"{day.isoformat()} is already switched to remote.")
+            return
+        self.state.add_remote_day(day)
+        msg = (f"🏠 {day:%A} {day.isoformat()} switched to remote — I'll "
+               "auto-clock it (Entrar → Remote) instead of sending office "
+               "reminders. Undo with /undoremote.")
+        if self.state.is_skipped(day):
+            msg += "\n⏭ It's on the skip list though — /unskip it to clock."
+        await update.message.reply_text(msg)
+        await self._replan_if_today(day)
+
+    async def _cmd_undoremote(self, update: Update, context):
+        if context.args:
+            day = self._arg_date(context)
+        else:
+            upcoming = self._upcoming_remote_days()
+            if not upcoming:
+                await update.message.reply_text(
+                    "No office days are switched to remote.")
+                return
+            day = date.fromisoformat(upcoming[0])
+        if not self.state.is_remote_day(day):
+            await update.message.reply_text(
+                f"{day.isoformat()} is not switched to remote.")
+            return
+        self.state.remove_remote_day(day)
+        await update.message.reply_text(
+            f"🏢 {day:%A} {day.isoformat()} is an office day again — "
+            "reminders only, no auto-clocking.")
+        await self._replan_if_today(day)
+
+    async def _replan_if_today(self, day: date) -> None:
+        """Today already planned with the other work type? Redo the plan.
+        Not planned yet (before PLAN_TIME) means the daily job will pick the
+        change up on its own."""
+        today = date.today()
+        if (day == today and self.state.get_plan(today)
+                and not self.state.is_skipped(today)):
+            await self.send("🔄 Replanning today…")
+            await self.scheduler.replan_today()
 
     async def _cmd_in(self, update: Update, _):
         await update.message.reply_text("Clocking in…")
-        result = await self.sesame.clock_in()
+        result = await self.sesame.clock_in(
+            work_type_for_day(date.today(), self.state.remote_days()))
         await update.message.reply_text(
             "🟢 Clocked in." if result != "already" else "Already clocked in."
         )
