@@ -63,3 +63,12 @@
         href: https://tplinkmodem.net:1443/
         icon: tp-link.png
         description: Gestion del router
+
+- Monitorizacion:
+    - Grafana:
+        href: https://grafana.local/
+        siteMonitor: http://grafana:3000
+        icon: grafana.png
+        description: Logs y alertas
+        container: grafana
+        server: my-docker

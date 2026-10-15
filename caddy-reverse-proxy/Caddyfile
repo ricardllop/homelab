@@ -28,3 +28,9 @@ homepage.local {
     tls internal
     reverse_proxy homepage:3000
 }
+
+grafana.local {
+    import local_only
+    tls internal
+    reverse_proxy grafana:3000
+}

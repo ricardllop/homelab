@@ -52,6 +52,12 @@ Local-only services (anything under a `.local` hostname) reject connections from
 ├── adguardhome/
 │   └── docker-compose.yml          # AdGuard Home on host network
 │
+├── monitoring/                     # Grafana + Loki + Alloy (container, journald and backup logs)
+│   ├── docker-compose.yml          # Exposed via Caddy at grafana.local
+│   ├── config.alloy                # What Alloy collects and ships to Loki
+│   ├── loki-config.yaml            # Single-node Loki, 30d retention
+│   └── example.env                 # Template — copy to .env and set the Grafana admin password
+│
 └── namecheap-ddns-updater/
     ├── Dockerfile                  # Minimal Alpine + bash + curl image
     ├── entrypoint.sh               # Polling loop that calls Namecheap DDNS API
