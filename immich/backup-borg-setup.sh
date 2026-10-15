@@ -2,9 +2,9 @@
 # https://borgbackup.readthedocs.io/en/stable/installation.html
 
 UPLOAD_LOCATION="/home/r-gmk/docker/immich/library"       # Immich database location, as set in your .env file
-BACKUP_PATH="/mnt/disk1/r-gmk/immich-backup"
+BACKUP_PATH="/mnt/backup/immich-backup"
 
-mkdir "$UPLOAD_LOCATION/database-backup"
+mkdir -p "$UPLOAD_LOCATION/database-backup" "$BACKUP_PATH"
 borg init --encryption=none "$BACKUP_PATH/immich-borg"
 
 # This is only setup, the backup script will do the actual backup

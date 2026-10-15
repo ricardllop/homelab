@@ -3,7 +3,7 @@ set -eu  # Exit on error and undefined variable
 
 # Paths
 UPLOAD_LOCATION="/home/r-gmk/docker/immich/library"
-BACKUP_PATH="/mnt/disk1/r-gmk/immich-backup"
+BACKUP_PATH="/mnt/backup/immich-backup"
 LOG_DIR="/var/log/immich-backup"
 LOG_FILE="$LOG_DIR/backup-$(date +'%Y-%m-%d_%H-%M-%S').log"
 
@@ -21,9 +21,15 @@ trap 'log "Backup script FAILED at line $LINENO"; exit 1' ERR
 
 log "=== Immich backup script started ==="
 
+# Abort if the backup disk is not mounted (avoid writing to the root fs)
+if ! mountpoint -q /mnt/backup; then
+    log "Backup disk not mounted at /mnt/backup"
+    exit 1
+fi
+
 # Dump PostgreSQL database
 log "Dumping Immich database..."
-docker exec -t immich_postgres pg_dumpall --clean --if-exists --username=postgres > "$UPLOAD_LOCATION/database-backup/immich-database.sql"
+docker exec immich_postgres pg_dumpall --clean --if-exists --username=postgres > "$UPLOAD_LOCATION/database-backup/immich-database.sql"
 log "Database dump complete."
 
 # Run Borg backup
