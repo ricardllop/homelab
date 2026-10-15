@@ -1,4 +1,4 @@
-gnore all .env files anywhere
+# Ignore all .env files anywhere
 **/.env
 
 # Caddy (ignore only inside caddy-reverse-proxy)
@@ -20,3 +20,18 @@ adguardhome/work/*
 
 # Project-x
 project-x/*
+
+# arr-stack: only docker-compose.yml is versioned.
+# App data dirs hold SQLite DBs, logs and API keys (config.xml, settings.json, qBittorrent.conf)
+arr-stack/*/
+
+# Homepage (config/*.yaml is versioned)
+homepage/config/logs/
+
+# Generic
+*.bak
+*.bak.*
+*.log
+*.pid
+*.db-shm
+*.db-wal

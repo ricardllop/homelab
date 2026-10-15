@@ -1,0 +1,65 @@
+- Media:
+    - Jellyfin:
+        href: https://jellyfin.local/
+        siteMonitor: http://jellyfin:8096
+        icon: jellyfin.png
+        description: Peliculas y series
+        container: jellyfin
+        server: my-docker
+    - Seerr:
+        href: http://192.168.1.2:5055/
+        siteMonitor: http://seerr:5055
+        icon: seerr.png
+        description: Peticiones de contenido
+        container: seerr
+        server: my-docker
+    - Immich:
+        href: https://immich.local/
+        siteMonitor: http://immich_server:2283
+        icon: immich.png
+        description: Fotos
+        container: immich_server
+        server: my-docker
+
+- Descargas:
+    - Prowlarr:
+        href: http://192.168.1.2:9696/
+        siteMonitor: http://prowlarr:9696
+        icon: prowlarr.png
+        description: Gestor de indexers
+        container: prowlarr
+        server: my-docker
+    - Sonarr:
+        href: http://192.168.1.2:8989/
+        siteMonitor: http://sonarr:8989
+        icon: sonarr.png
+        description: Series
+        container: sonarr
+        server: my-docker
+    - Radarr:
+        href: http://192.168.1.2:7878/
+        siteMonitor: http://radarr:7878
+        icon: radarr.png
+        description: Peliculas
+        container: radarr
+        server: my-docker
+    - qBittorrent:
+        href: http://192.168.1.2:8080/
+        siteMonitor: http://qbittorrent:8080
+        icon: qbittorrent.png
+        description: Cliente torrent
+        container: qbittorrent
+        server: my-docker
+
+- Red:
+    - AdGuard Home:
+        href: https://adguard.local/
+        siteMonitor: http://192.168.1.2:81
+        icon: adguard-home.png
+        description: DNS y bloqueo de anuncios
+        container: adguardhome-adguardhome-1
+        server: my-docker
+    - Router:
+        href: https://tplinkmodem.net:1443/
+        icon: tp-link.png
+        description: Gestion del router

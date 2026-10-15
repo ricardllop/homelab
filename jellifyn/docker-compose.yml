@@ -17,6 +17,11 @@ services:
       - type: bind
         source: /mnt/disk1/r-gmk/jellyfinmedia
         target: /media
+      # biblioteca gestionada por los *arr (solo lectura; escriben Sonarr/Radarr)
+      - type: bind
+        source: /mnt/disk1/r-gmk/data/media
+        target: /data/media
+        read_only: true
     networks:
       - homelab
     restart: 'unless-stopped'

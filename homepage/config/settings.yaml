@@ -1,0 +1,14 @@
+title: Homelab
+theme: dark
+color: slate
+headerStyle: clean
+layout:
+  Media:
+    style: row
+    columns: 3
+  Descargas:
+    style: row
+    columns: 4
+  Red:
+    style: row
+    columns: 2

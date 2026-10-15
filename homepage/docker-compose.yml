@@ -1,0 +1,24 @@
+name: homepage
+
+networks:
+  homelab:
+    external: true
+
+services:
+  homepage:
+    image: ghcr.io/gethomepage/homepage:latest
+    container_name: homepage
+    networks: [homelab]
+    environment:
+      - TZ=Europe/Madrid
+      # Homepage reciente exige declarar los hosts permitidos o rechaza la peticion.
+      # Incluye el dominio local (via Caddy) y el acceso directo por IP:puerto.
+      - HOMEPAGE_ALLOWED_HOSTS=homepage.local,192.168.1.2:3000
+    volumes:
+      - ./config:/app/config
+      # Opcional: lectura del socket de Docker para los widgets de contenedores.
+      # Es solo lectura (:ro). Quitalo si prefieres no exponer el socket.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "3000:3000"
+    restart: unless-stopped

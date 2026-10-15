@@ -1,0 +1,119 @@
+name: arr-stack
+
+# Red compartida con Caddy/Immich/Jellyfin: Caddy y Jellyseerr llegan a estos
+# contenedores por su container_name. Creada por 00_homelab-network.sh.
+networks:
+  homelab:
+    external: true
+
+# Convenciones comunes:
+#   PUID/PGID 1000 = usuario r-gmk (dueño de /config y /data)
+#   TZ Europe/Madrid para logs y programaciones correctas
+#   /data es UN solo montaje (descargas + biblioteca) para que funcionen los
+#   hardlinks y los "atomic moves" entre qBittorrent y Sonarr/Radarr.
+#   Estructura esperada dentro de /mnt/disk1/r-gmk/data:
+#       torrents/{movies,tv}   <- qBittorrent descarga aqui
+#       media/{movies,tv}      <- Sonarr/Radarr dejan la biblioteca final aqui
+
+services:
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:latest
+    container_name: prowlarr
+    networks: [homelab]
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ./prowlarr:/config
+    ports:
+      - "9696:9696"
+    restart: unless-stopped
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    networks: [homelab]
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ./sonarr:/config
+      - /mnt/disk1/r-gmk/data:/data
+    ports:
+      - "8989:8989"
+    restart: unless-stopped
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    networks: [homelab]
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+    volumes:
+      - ./radarr:/config
+      - /mnt/disk1/r-gmk/data:/data
+    ports:
+      - "7878:7878"
+    restart: unless-stopped
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    networks: [homelab]
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Madrid
+      - WEBUI_PORT=8080
+    volumes:
+      - ./qbittorrent:/config
+      - /mnt/disk1/r-gmk/data:/data
+    ports:
+      - "8080:8080"       # WebUI
+      - "6881:6881"       # puerto de escucha torrent (TCP)
+      - "6881:6881/udp"   # puerto de escucha torrent (UDP)
+    restart: unless-stopped
+
+  seerr:  # sucesor oficial de Jellyseerr (deprecado 2026-02-14)
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    init: true   # Seerr ya no provee proceso init propio
+    networks: [homelab]
+    environment:
+      - TZ=Europe/Madrid
+      - LOG_LEVEL=info
+    volumes:
+      - ./seerr:/app/config   # debe ser escribible por UID 1000
+    ports:
+      - "5055:5055"
+    restart: unless-stopped
+
+  # --- Opcionales (descomenta si los quieres) ---
+  # bazarr:  # subtitulos automaticos para Sonarr/Radarr
+  #   image: lscr.io/linuxserver/bazarr:latest
+  #   container_name: bazarr
+  #   networks: [homelab]
+  #   environment:
+  #     - PUID=1000
+  #     - PGID=1000
+  #     - TZ=Europe/Madrid
+  #   volumes:
+  #     - ./bazarr:/config
+  #     - /mnt/disk1/r-gmk/data:/data
+  #   ports:
+  #     - "6767:6767"
+  #   restart: unless-stopped
+  #
+  # flaresolverr:  # resuelve Cloudflare en algunos indexers de Prowlarr
+  #   image: ghcr.io/flaresolverr/flaresolverr:latest
+  #   container_name: flaresolverr
+  #   networks: [homelab]
+  #   environment:
+  #     - TZ=Europe/Madrid
+  #   ports:
+  #     - "8191:8191"
+  #   restart: unless-stopped
