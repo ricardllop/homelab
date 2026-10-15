@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: homelab
+    type: file
+    allowUiUpdates: true  # edits in the UI are allowed but lost on restart; export the JSON back here to keep them
+    options:
+      path: /etc/grafana/provisioning/dashboards

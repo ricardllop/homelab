@@ -1,0 +1,131 @@
+{
+  "uid": "homelab-logs",
+  "title": "Homelab logs",
+  "tags": ["homelab", "loki"],
+  "timezone": "browser",
+  "refresh": "1m",
+  "time": { "from": "now-24h", "to": "now" },
+  "schemaVersion": 39,
+  "templating": {
+    "list": [
+      {
+        "name": "container",
+        "label": "Container",
+        "type": "query",
+        "datasource": { "type": "loki", "uid": "loki" },
+        "query": "label_values(container)",
+        "refresh": 2,
+        "sort": 1,
+        "multi": true,
+        "includeAll": true,
+        "allValue": ".+",
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Log volume per container",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 80, "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"$container\"}[$__interval]))",
+          "legendFormat": "{{container}}"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Errors per container",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": { "custom": { "drawStyle": "bars", "fillOpacity": 80, "stacking": { "mode": "normal" } } },
+        "overrides": []
+      },
+      "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (container) (count_over_time({job=\"docker\", container=~\"$container\"} |~ \"(?i)error|fatal|panic\" [$__interval]))",
+          "legendFormat": "{{container}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Backup failures (7d)",
+      "gridPos": { "x": 0, "y": 8, "w": 6, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "0",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "instant",
+          "expr": "sum(count_over_time({job=\"immich-backup\"} |~ \"FAILED|not mounted\" [7d]))"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Immich backup runs",
+      "gridPos": { "x": 6, "y": 8, "w": 18, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"immich-backup\"} |~ \"===|FAILED|not mounted\""
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "logs",
+      "title": "Host journal errors",
+      "gridPos": { "x": 0, "y": 16, "w": 24, "h": 8 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "showLabels": true, "sortOrder": "Descending", "wrapLogMessage": true },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"journal\", level=~\"err|crit|alert|emerg\"}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "Container logs ($container)",
+      "gridPos": { "x": 0, "y": 24, "w": 24, "h": 14 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "options": { "showTime": true, "showLabels": true, "sortOrder": "Descending", "wrapLogMessage": true, "enableLogDetails": true },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{job=\"docker\", container=~\"$container\"}"
+        }
+      ]
+    }
+  ]
+}
