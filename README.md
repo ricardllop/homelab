@@ -1,6 +1,6 @@
 # Homelab
 
-A self-hosted homelab running on a dedicated mini PC in a home network, managed entirely with Docker Compose. The setup provides photo management, media streaming, network-level ad blocking, automatic TLS reverse proxying, and dynamic DNS — all accessible from anywhere via a public domain or locally via `.local` hostnames.
+A self-hosted homelab running on a dedicated mini PC in a home network, managed entirely with Docker Compose. The setup provides photo management, media streaming with automated downloads, network-level ad blocking, automatic TLS reverse proxying, dynamic DNS, a dashboard, log monitoring, an AI agent and a work-clock bot — all accessible from anywhere via a public domain or locally via `.local` hostnames.
 
 ## Network architecture
 
@@ -19,12 +19,20 @@ Internet
     │     ├── immich.homelab.example.com  ──► Immich
     │     ├── immich.local  (LAN only)   ──► Immich
     │     ├── jellyfin.local  (LAN only) ──► Jellyfin
-    │     └── adguard.local  (LAN only)  ──► AdGuard Home
+    │     ├── adguard.local  (LAN only)  ──► AdGuard Home
+    │     ├── homepage.local (LAN only)  ──► Homepage
+    │     ├── grafana.local  (LAN only)  ──► Grafana
+    │     └── hermes.local   (LAN only)  ──► Hermes Agent
     │
-    ├── Immich        (photo library)
-    ├── Jellyfin      (media server)
-    ├── AdGuard Home  (DNS + ad blocking)
-    └── DDNS Updater  (keeps DNS record pointing to home IP)
+    ├── Immich           (photo library)
+    ├── Jellyfin         (media server)
+    ├── Arr stack        (Prowlarr, Sonarr, Radarr, qBittorrent, Seerr; LAN ports)
+    ├── AdGuard Home     (DNS + ad blocking)
+    ├── Homepage         (dashboard)
+    ├── Monitoring       (Grafana + Loki + Alloy)
+    ├── Hermes Agent     (AI agent, Telegram)
+    ├── Sesame autoclock (work clock-in bot, Telegram)
+    └── DDNS Updater     (keeps DNS record pointing to home IP)
 ```
 
 Local-only services (anything under a `.local` hostname) reject connections from outside `192.168.1.0/24` at the Caddy level.
@@ -35,6 +43,7 @@ Local-only services (anything under a `.local` hostname) reject connections from
 .
 ├── 00_homelab-network.sh           # Creates the shared Docker network (run once)
 ├── 01_docker-compose-up-all.sh     # Starts all services
+├── 02_docker-compose-recreate-all.sh  # Pulls and force-recreates every container
 │
 ├── caddy-reverse-proxy/
 │   ├── Caddyfile                   # Route definitions and local-only access rules
@@ -49,14 +58,33 @@ Local-only services (anything under a `.local` hostname) reject connections from
 ├── jellifyn/
 │   └── docker-compose.yml          # Jellyfin with AMD GPU passthrough
 │
+├── arr-stack/
+│   └── docker-compose.yml          # Prowlarr, Sonarr, Radarr, qBittorrent, Seerr
+│
 ├── adguardhome/
 │   └── docker-compose.yml          # AdGuard Home on host network
+│
+├── homepage/
+│   ├── docker-compose.yml          # Exposed via Caddy at homepage.local
+│   └── config/                     # services.yaml, widgets.yaml, bookmarks.yaml, ...
 │
 ├── monitoring/                     # Grafana + Loki + Alloy (container, journald and backup logs)
 │   ├── docker-compose.yml          # Exposed via Caddy at grafana.local
 │   ├── config.alloy                # What Alloy collects and ships to Loki
 │   ├── loki-config.yaml            # Single-node Loki, 30d retention
+│   ├── grafana/provisioning/       # Loki datasource + "Homelab logs" dashboard
 │   └── example.env                 # Template — copy to .env and set the Grafana admin password
+│
+├── hermes-agent/                   # See hermes-agent/README.md
+│   ├── docker-compose.yml          # Exposed via Caddy at hermes.local
+│   ├── backup-hermes.sh            # Daily backup to /mnt/backup (run via cron)
+│   └── example.env                 # Template — copy to .env and set the dashboard login
+│
+├── sesame-autoclock/               # See sesame-autoclock/README.md
+│   ├── Dockerfile                  # Python + Playwright Chromium
+│   ├── app/                        # Bot, scheduler and Sesame automation
+│   ├── docker-compose.yml
+│   └── example.env                 # Template — copy to .env and fill in credentials
 │
 └── namecheap-ddns-updater/
     ├── Dockerfile                  # Minimal Alpine + bash + curl image
@@ -96,19 +124,51 @@ Immich photos and database are backed up with [Borg](https://borgbackup.readthed
    ```bash
    ./immich/backup-borg-script-v2.sh
    ```
-   Schedule this with cron. Thumbnails and transcoded video are excluded (they are regenerable). Archives are pruned to keep the last 4 weekly and 3 monthly snapshots.
+   Runs from root's crontab (see [Host setup](#host-setup)). Thumbnails and transcoded video are excluded (they are regenerable). Archives are pruned to keep the last 4 weekly and 3 monthly snapshots.
 
 For restore instructions see the [Immich backup guide](https://immich.app/docs/guides/template-backup-script/#restoring).
 
 ### Jellyfin — media server
 
-[Jellyfin](https://jellyfin.org) is a self-hosted media system for movies, TV shows, and music. The container is configured with AMD GPU passthrough (`/dev/dri`) and the `radeonsi` VAAPI driver for hardware-accelerated video transcoding. Media files are read from `/mnt/disk1/r-gmk/jellyfinmedia` on the host.
+[Jellyfin](https://jellyfin.org) is a self-hosted media system for movies, TV shows, and music. The container is configured with AMD GPU passthrough (`/dev/dri`) and the `radeonsi` VAAPI driver for hardware-accelerated video transcoding. Media files are read from `/mnt/disk1/r-gmk/jellyfinmedia` on the host, plus the arr-stack library at `/mnt/disk1/r-gmk/data/media` (read-only).
+
+### Arr stack — automated downloads
+
+Feeds the Jellyfin library. All containers use the linuxserver images with `PUID`/`PGID` 1000, so their config dirs stay owned by `r-gmk`.
+
+| Container | Port | Role |
+|---|---|---|
+| `prowlarr` | 9696 | Indexer manager, shared with Sonarr/Radarr |
+| `sonarr` | 8989 | TV shows |
+| `radarr` | 7878 | Movies |
+| `qbittorrent` | 8080 (UI), 6881 (torrent) | Download client |
+| `seerr` | 5055 | Request UI on top of Jellyfin (successor of Jellyseerr) |
+
+Sonarr, Radarr and qBittorrent share one `/data` mount (`/mnt/disk1/r-gmk/data`) so hardlinks and atomic moves work: qBittorrent downloads to `torrents/{movies,tv}`, Sonarr/Radarr place the final files in `media/{movies,tv}`. The UIs are reached by `IP:port` on the LAN, not through Caddy. App config dirs (`arr-stack/*/`) hold API keys and are gitignored.
+
+### Homepage — dashboard
+
+[Homepage](https://gethomepage.dev) is a start page linking every service, at `homepage.local`. Its configuration is the versioned `homepage/config/*.yaml`. It reads the Docker socket (read-only) to show container status.
 
 ### AdGuard Home — DNS & ad blocking
 
 [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome) acts as the network's DNS resolver. All LAN devices point to the mini PC as their DNS server. AdGuard Home blocks ad and tracker domains before they ever reach the browser, and also resolves the `.local` hostnames to the mini PC's LAN IP so that local Caddy routes work on any device without manual `/etc/hosts` entries.
 
 It runs with `network_mode: host` so it can bind to port 53 on the LAN interface. The web UI is on port 81, accessible via `adguard.local` through Caddy.
+
+Its whole config (DNS rewrites, blocklists, admin password hash) is `config/AdGuardHome.yaml`. It is not versioned because it holds the password hash; root's crontab copies it daily to `/mnt/backup/adguardhome/config/` instead (see [Host setup](#host-setup)).
+
+### Monitoring — Grafana, Loki, Alloy
+
+Centralised logs at `grafana.local`. [Alloy](https://grafana.com/docs/alloy/) collects every container's logs (via the Docker socket), the host journal (including the Hermes backup cron) and the Immich backup logs in `/var/log/immich-backup`, and ships them to [Loki](https://grafana.com/oss/loki/) (30-day retention). [Grafana](https://grafana.com/oss/grafana/) is provisioned from the repo with the Loki datasource and the "Homelab logs" dashboard. Data lives in named Docker volumes, since Loki and Grafana run as non-root users. Set the Grafana admin password in `monitoring/.env`.
+
+### Hermes Agent — AI agent
+
+[Hermes Agent](https://hermes-agent.nousresearch.com) gateway reachable over Telegram, with a web dashboard at `hermes.local`. It uses the Claude subscription (via the `claude` CLI) instead of an API key. Everything, including credentials, lives in `hermes-agent/data/` (gitignored) and is backed up daily to `/mnt/backup/hermes-backup/`, keeping 14 days. Setup steps are in [hermes-agent/README.md](hermes-agent/README.md).
+
+### Sesame autoclock — work clock-in bot
+
+Telegram bot that clocks in and out on Sesame HR through a headless Chromium (Playwright): it plans each workday, skips holidays and absences, clocks automatically on remote days and sends reminders on office days. Its state and browser profile live in `sesame-autoclock/data/`. Details are in [sesame-autoclock/README.md](sesame-autoclock/README.md).
 
 ### Namecheap DDNS updater
 
@@ -131,26 +191,61 @@ Configure via `.env` (see `example.env`):
 - A Namecheap domain with DDNS enabled
 - Router port forwarding: **80** and **443** → mini PC
 
+### Host setup
+
+Everything here lives outside the repo, on the host itself.
+
+- **User:** `r-gmk` must be uid/gid **1000** (the arr-stack `PUID`/`PGID` assume it) and in the `docker` group:
+  ```bash
+  sudo usermod -aG docker r-gmk
+  ```
+- **Static LAN IP:** the mini PC must be `192.168.1.2` on `192.168.1.0/24`. The Caddyfile hardcodes both (local-only allowlist and the AdGuard upstream), and LAN devices use it as their DNS server. Set it with a DHCP reservation on the router or in netplan.
+- **Backup disk** mounted at `/mnt/backup`, in `/etc/fstab` (get the UUID with `sudo blkid`; `nofail` keeps the host booting without it):
+  ```
+  UUID=b805fdcd-5d8f-444f-81d2-3c8d3e82c3c1 /mnt/backup ext4 defaults,nofail,x-systemd.device-timeout=10 0 2
+  ```
+- **Media paths:** `/mnt/disk1/r-gmk/...` (Jellyfin, arr-stack) are plain directories on the root disk, owned by `r-gmk`.
+- **Tailscale** as an exit node (also approve it in the Tailscale admin console):
+  ```bash
+  curl -fsSL https://tailscale.com/install.sh | sh
+  echo 'net.ipv4.ip_forward = 1' | sudo tee /etc/sysctl.d/99-tailscale.conf
+  echo 'net.ipv6.conf.all.forwarding = 1' | sudo tee -a /etc/sysctl.d/99-tailscale.conf
+  sudo sysctl -p /etc/sysctl.d/99-tailscale.conf
+  sudo tailscale up --advertise-exit-node
+  ```
+- **Cron jobs.** Root's crontab (`sudo crontab -e`) needs root because the Immich library, the Borg repo and `AdGuardHome.yaml` are root-owned:
+  ```
+  0 3 * * 0,3 /home/r-gmk/docker/immich/backup-borg-script-v2.sh
+  0 3 * * *   mountpoint -q /mnt/backup && install -D -m 600 /home/r-gmk/docker/adguardhome/config/AdGuardHome.yaml /mnt/backup/adguardhome/config/AdGuardHome.yaml
+  ```
+  `r-gmk`'s crontab (`crontab -e`):
+  ```
+  30 3 * * * /home/r-gmk/docker/hermes-agent/backup-hermes.sh 2>&1 | systemd-cat -t hermes-backup
+  ```
+
 ### First-time setup
 
 ```bash
 # 1. Create the shared Docker network
 ./00_homelab-network.sh
 
-# 2. Configure Immich
-cp immich/example.env immich/.env
-# Edit immich/.env: set DB_PASSWORD, UPLOAD_LOCATION, DB_DATA_LOCATION
+# 2. Create every .env from its example and fill in the secrets
+#    (immich, namecheap-ddns-updater, monitoring, sesame-autoclock, hermes-agent)
+for d in */; do [ -f "$d/example.env" ] && [ ! -f "$d/.env" ] && cp "$d/example.env" "$d/.env"; done
+# immich/.env: DB_PASSWORD, UPLOAD_LOCATION, DB_DATA_LOCATION
+# namecheap-ddns-updater/.env: DDNS_PASSWORD, DOMAIN_NAME, HOSTNAME_ENTRIES
 
-# 3. Configure DDNS updater
-cp namecheap-ddns-updater/example.env namecheap-ddns-updater/.env
-# Edit namecheap-ddns-updater/.env: set DDNS_PASSWORD, DOMAIN_NAME, HOSTNAME_ENTRIES
-
-# 4. Initialise Borg backup repository
+# 3. Initialise Borg backup repository (skip if restoring from an existing /mnt/backup)
 ./immich/backup-borg-setup.sh
+
+# 4. Restore AdGuard config, if a backup exists
+sudo install -D -m 600 /mnt/backup/adguardhome/config/AdGuardHome.yaml adguardhome/config/AdGuardHome.yaml
 
 # 5. Start all services
 ./01_docker-compose-up-all.sh
 ```
+
+Keep a copy of the `.env` files outside this host (e.g. a password manager); they are neither versioned nor backed up.
 
 ### Starting / stopping individual services
 
