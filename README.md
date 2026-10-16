@@ -130,7 +130,7 @@ For restore instructions see the [Immich backup guide](https://immich.app/docs/g
 
 ### Jellyfin — media server
 
-[Jellyfin](https://jellyfin.org) is a self-hosted media system for movies, TV shows, and music. The container is configured with AMD GPU passthrough (`/dev/dri`) and the `radeonsi` VAAPI driver for hardware-accelerated video transcoding. Media files are read from `/mnt/disk1/r-gmk/jellyfinmedia` on the host, plus the arr-stack library at `/mnt/disk1/r-gmk/data/media` (read-only).
+[Jellyfin](https://jellyfin.org) is a self-hosted media system for movies, TV shows, and music. The container is configured with AMD GPU passthrough (`/dev/dri`) and the `radeonsi` VAAPI driver for hardware-accelerated video transcoding. Media files are read from `/mnt/backup/media/jellyfinmedia` on the host, plus the arr-stack library at `/mnt/backup/media/data/media` (read-only).
 
 ### Arr stack — automated downloads
 
@@ -144,7 +144,7 @@ Feeds the Jellyfin library. All containers use the linuxserver images with `PUID
 | `qbittorrent` | 8080 (UI), 6881 (torrent) | Download client |
 | `seerr` | 5055 | Request UI on top of Jellyfin (successor of Jellyseerr) |
 
-Sonarr, Radarr and qBittorrent share one `/data` mount (`/mnt/disk1/r-gmk/data`) so hardlinks and atomic moves work: qBittorrent downloads to `torrents/{movies,tv}`, Sonarr/Radarr place the final files in `media/{movies,tv}`. The UIs are reached by `IP:port` on the LAN, not through Caddy. App config dirs (`arr-stack/*/`) hold API keys and are gitignored.
+Sonarr, Radarr and qBittorrent share one `/data` mount (`/mnt/backup/media/data`) so hardlinks and atomic moves work: qBittorrent downloads to `torrents/{movies,tv}`, Sonarr/Radarr place the final files in `media/{movies,tv}`. The UIs are reached by `IP:port` on the LAN, not through Caddy. App config dirs (`arr-stack/*/`) hold API keys and are gitignored.
 
 ### Homepage — dashboard
 
@@ -204,7 +204,7 @@ Everything here lives outside the repo, on the host itself.
   ```
   UUID=b805fdcd-5d8f-444f-81d2-3c8d3e82c3c1 /mnt/backup ext4 defaults,nofail,x-systemd.device-timeout=10 0 2
   ```
-- **Media paths:** `/mnt/disk1/r-gmk/...` (Jellyfin, arr-stack) are plain directories on the root disk, owned by `r-gmk`.
+- **Media paths:** `/mnt/backup/media/...` (Jellyfin, arr-stack) live on the external USB disk mounted at `/mnt/backup` (see `/etc/fstab`), owned by `r-gmk`.
 - **Tailscale** as an exit node (also approve it in the Tailscale admin console):
   ```bash
   curl -fsSL https://tailscale.com/install.sh | sh

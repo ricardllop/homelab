@@ -11,7 +11,9 @@ networks:
 #   TZ Europe/Madrid para logs y programaciones correctas
 #   /data es UN solo montaje (descargas + biblioteca) para que funcionen los
 #   hardlinks y los "atomic moves" entre qBittorrent y Sonarr/Radarr.
-#   Estructura esperada dentro de /mnt/disk1/r-gmk/data:
+#   Bind en formato largo: si el disco externo no esta montado el contenedor no
+#   arranca, en vez de descargar al disco raiz.
+#   Estructura esperada dentro de /mnt/backup/media/data:
 #       torrents/{movies,tv}   <- qBittorrent descarga aqui
 #       media/{movies,tv}      <- Sonarr/Radarr dejan la biblioteca final aqui
 
@@ -40,7 +42,9 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ./sonarr:/config
-      - /mnt/disk1/r-gmk/data:/data
+      - type: bind
+        source: /mnt/backup/media/data
+        target: /data
     ports:
       - "8989:8989"
     restart: unless-stopped
@@ -55,7 +59,9 @@ services:
       - TZ=Europe/Madrid
     volumes:
       - ./radarr:/config
-      - /mnt/disk1/r-gmk/data:/data
+      - type: bind
+        source: /mnt/backup/media/data
+        target: /data
     ports:
       - "7878:7878"
     restart: unless-stopped
@@ -71,7 +77,9 @@ services:
       - WEBUI_PORT=8080
     volumes:
       - ./qbittorrent:/config
-      - /mnt/disk1/r-gmk/data:/data
+      - type: bind
+        source: /mnt/backup/media/data
+        target: /data
     ports:
       - "8080:8080"       # WebUI
       - "6881:6881"       # puerto de escucha torrent (TCP)
@@ -103,7 +111,7 @@ services:
   #     - TZ=Europe/Madrid
   #   volumes:
   #     - ./bazarr:/config
-  #     - /mnt/disk1/r-gmk/data:/data
+  #     - /mnt/backup/media/data:/data
   #   ports:
   #     - "6767:6767"
   #   restart: unless-stopped

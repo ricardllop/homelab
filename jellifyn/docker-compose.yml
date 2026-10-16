@@ -15,11 +15,11 @@ services:
       - ./config:/config
       - ./cache:/cache
       - type: bind
-        source: /mnt/disk1/r-gmk/jellyfinmedia
+        source: /mnt/backup/media/jellyfinmedia
         target: /media
       # biblioteca gestionada por los *arr (solo lectura; escriben Sonarr/Radarr)
       - type: bind
-        source: /mnt/disk1/r-gmk/data/media
+        source: /mnt/backup/media/data/media
         target: /data/media
         read_only: true
     networks:
